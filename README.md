@@ -1,4 +1,6 @@
-# S-LIBRARY (Smart Library Management System)
+# S-LIBRARY 
+# 661310252 นายกิตติ จิวะเกียรติ
+# 661310356 นายพรชัย กองเพชร
 
 ---
 
