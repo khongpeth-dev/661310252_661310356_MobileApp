@@ -1,7 +1,5 @@
 # S-LIBRARY (Smart Library Management System)
 
-แอปพลิเคชันระบบจัดการห้องสมุดอัจฉริยะ พัฒนาด้วย Python แบบ Full-stack โดยแยกโครงสร้างการทำงานระหว่าง Frontend (Flet) และ Backend (FastAPI) พร้อมระบบฐานข้อมูล MariaDB/MySQL
-
 ---
 
 # สภาพแวดล้อมที่รองรับ (Prerequisites)
