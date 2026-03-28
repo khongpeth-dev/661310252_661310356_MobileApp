@@ -33,6 +33,9 @@ class ReturnReq(BaseModel):
     condition_after: str
     fine_amount: float = Field(..., ge=0)
 
+class RejectReq(BaseModel):
+    reason: str = Field(..., min_length=1)
+
 class CategoryReq(BaseModel):
     name: str = Field(..., min_length=1)
 
@@ -116,14 +119,21 @@ def borrow_book(req: BorrowReq):
     due_date = (datetime.date.today() + datetime.timedelta(days=req.days)).strftime('%Y-%m-%d')
     try:
         with db.cursor() as cur:
+            # Check for existing pending request for this user and this book
+            cur.execute("SELECT id FROM transactions WHERE user_id=%s AND book_id=%s AND status='pending_borrow'", (req.user_id, req.book_id))
+            if cur.fetchone():
+                raise HTTPException(status_code=400, detail="คุณได้ส่งคำขอยืมหนังสือเล่มนี้ไปแล้ว และกำลังรอการอนุมัติ")
+
             cur.execute("INSERT INTO transactions (user_id, book_id, borrow_date, due_date, condition_before, status, is_notified_borrow) VALUES (%s, %s, CURDATE(), %s, %s, 'pending_borrow', 0)", 
                         (req.user_id, req.book_id, due_date, req.condition))
-            cur.execute("UPDATE books SET is_available=0 WHERE id=%s", (req.book_id,))
+            # [REMOVED] cur.execute("UPDATE books SET is_available=0 WHERE id=%s", (req.book_id,))
             db.commit()
             return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
-        print("❌ DATABASE ERROR:", str(e)) # ปริ้นท์บอกใน Terminal ให้รู้ชัดๆ
+        print("❌ DATABASE ERROR:", str(e)) 
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/user/{user_id}/borrows")
@@ -169,6 +179,13 @@ def check_notifications(user_id: int):
             fine_text = f" (ค่าปรับ: {row['fine_amount']}฿)" if row['fine_amount'] > 0 else " (ไม่มีค่าปรับ)"
             notifs.append(f"📦 ตรวจรับคืนแล้ว: {row['title']}{fine_text}")
             cur.execute("UPDATE transactions SET is_notified = 1 WHERE id = %s", (row['id'],))
+        
+        # 3. แจ้งเตือนการแจ้งปฏิเสธการยืม
+        cur.execute("SELECT t.id, b.title, t.rejection_reason FROM transactions t JOIN books b ON t.book_id = b.id WHERE t.user_id = %s AND t.is_notified_borrow = 0 AND t.status = 'rejected'", (user_id,))
+        for row in cur.fetchall():
+            notifs.append(f"❌ การยืมถูกปฏิเสธ: {row['title']} (เหตุผล: {row['rejection_reason']})")
+            cur.execute("UPDATE transactions SET is_notified_borrow = 1 WHERE id = %s", (row['id'],))
+        
         db.commit()
     return notifs
 
@@ -187,6 +204,17 @@ def approve_borrow(tx_id: int):
         cur.execute("UPDATE transactions SET status = 'borrowed' WHERE id = %s", (tx_id,))
         # Safety: Ensure book is marked unavailable (it should be, but just in case)
         cur.execute("UPDATE books SET is_available = 0 WHERE id = (SELECT book_id FROM transactions WHERE id = %s)", (tx_id,))
+        db.commit()
+        return {"status": "success"}
+
+@app.put("/officer/reject_borrow/{tx_id}")
+def reject_borrow(tx_id: int, req: RejectReq):
+    db = get_db()
+    with db.cursor() as cur:
+        # Update status to rejected and store reason
+        cur.execute("UPDATE transactions SET status = 'rejected', rejection_reason = %s, is_notified_borrow = 0 WHERE id = %s", (req.reason, tx_id))
+        # Ensure book is marked as available (it should already be, but for safety)
+        cur.execute("UPDATE books SET is_available = 1 WHERE id = (SELECT book_id FROM transactions WHERE id = %s)", (tx_id,))
         db.commit()
         return {"status": "success"}
 

@@ -204,9 +204,9 @@ def main(page: ft.Page):
                 # 1. Background (ลายหนังสือกะจายจางๆ)
                 bg = ft.Image(
                     src="/bg_library.png",
-                    opacity=0.18, # ปรับให้เข้มขึ้นเพื่อให้เห็นชัดตามต้องการ
-                    repeat="repeat",
-                    expand=True,
+                    opacity=0.18, 
+                    repeat=ft.ImageRepeat.REPEAT,
+                    top=0, left=0, right=0, bottom=0,
                     gapless_playback=True
                 )
                 
@@ -768,7 +768,11 @@ def main(page: ft.Page):
                             ft.Text(p['title'], weight="bold", size=16),
                             ft.Text(f"ผู้ขอ: {p['full_name']} | เริ่มทำรายการ: {p.get('borrow_date','')}", color=C_TEXT_SUB, size=13)
                         ], expand=True),
-                        PrimaryButton("อนุมัติ", lambda e, tid=p['id']: apprv_brw(tid), icon=ft.Icons.CHECK)
+                        ft.Row([
+                            PrimaryButton("อนุมัติ", lambda e, tid=p['id']: apprv_brw(tid), icon=ft.Icons.CHECK),
+                            ft.Container(width=5),
+                            DangerButton("ปฏิเสธ", lambda e, tid=p['id']: show_reject_modal(tid), icon=ft.Icons.CLOSE)
+                        ], spacing=0)
                     ])
                 ))
             for r in requests.get(f"{API_URL}/officer/pending_returns").json():
@@ -786,10 +790,41 @@ def main(page: ft.Page):
         def apprv_brw(tid):
             res = requests.put(f"{API_URL}/officer/approve_borrow/{tid}")
             if res.status_code == 200:
-                show_toast("อนุมัติเสร็จสิ้น")
+                show_toast("อนุมัติเสร็จสิ้น", is_error=False)
                 change_view("home")
             else:
                 handle_api_error(res)
+
+        def show_reject_modal(tid):
+            reason_input = ft.TextField(label="ระบุเหตุผลการปฏิเสธ", border_radius=12, bgcolor=C_PRIMARY_LIGHT, filled=True, border=ft.InputBorder.NONE)
+            def do_reject(e):
+                if not reason_input.value:
+                    show_toast("กรุณาระบุเหตุผล")
+                    return
+                res = requests.put(f"{API_URL}/officer/reject_borrow/{tid}", json={"reason": reason_input.value})
+                if res.status_code == 200:
+                    bs.open = False
+                    show_toast("ปฏิเสธคำขอยืมเรียบร้อยแล้ว", is_error=False)
+                    change_view("home")
+                else:
+                    handle_api_error(res)
+
+            bs = ft.BottomSheet(
+                ft.Container(
+                    padding=ft.Padding(35, 35, 35, 35), bgcolor=C_CARD, border_radius=ft.BorderRadius(24, 24, 0, 0),
+                    content=ft.Column([
+                        ft.Text("ปฏิเสธการยืมหนังสือ", size=22, weight="black", color=C_SECONDARY),
+                        ft.Text("ระบุเหตุผลเพื่อให้ผู้ใช้ทราบถึงสาเหตุที่ไม่อนุมัติ", size=14, color=C_TEXT_SUB),
+                        ft.Container(height=10),
+                        reason_input,
+                        ft.Container(height=20),
+                        PrimaryButton("ยืนยันการปฏิเสธ", do_reject, icon=ft.Icons.SEND, bgcolor=C_DANGER)
+                    ], horizontal_alignment="center", tight=True)
+                )
+            )
+            page.overlay.append(bs)
+            bs.open = True
+            page.update()
 
         return PageLayout(
             content=ft.Column([
