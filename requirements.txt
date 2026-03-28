@@ -1,0 +1,6 @@
+flet==0.83.0
+requests
+pymysql
+fastapi
+uvicorn
+pydantic
